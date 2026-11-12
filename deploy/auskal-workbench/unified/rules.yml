@@ -1,0 +1,69 @@
+rules:
+  - id: python-shell-command
+    languages: [python]
+    message: Subprocess invoked with shell=True; review untrusted command input.
+    severity: WARNING
+    pattern: subprocess.$FUNC(..., shell=True, ...)
+  - id: python-dynamic-eval
+    languages: [python]
+    message: Dynamic Python evaluation requires trusted input.
+    severity: WARNING
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: exec(...)
+  - id: python-unsafe-pickle
+    languages: [python]
+    message: Pickle deserialization can execute code when input is untrusted.
+    severity: WARNING
+    pattern-either:
+      - pattern: pickle.loads(...)
+      - pattern: pickle.load(...)
+  - id: python-tls-verification-disabled
+    languages: [python]
+    message: HTTP client disables TLS certificate verification.
+    severity: ERROR
+    pattern: requests.$METHOD(..., verify=False, ...)
+  - id: javascript-dynamic-eval
+    languages: [javascript, typescript]
+    message: Dynamic JavaScript evaluation requires trusted input.
+    severity: WARNING
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+  - id: javascript-html-sink
+    languages: [javascript, typescript]
+    message: HTML injection sink; ensure untrusted data is sanitized.
+    severity: WARNING
+    pattern: $ELEMENT.innerHTML = $VALUE
+  - id: node-command-exec
+    languages: [javascript, typescript]
+    message: Shell command execution; review how command input is constructed.
+    severity: WARNING
+    pattern-either:
+      - pattern: child_process.exec(...)
+      - pattern: child_process.execSync(...)
+  - id: java-runtime-command
+    languages: [java]
+    message: Java runtime command execution requires trusted arguments.
+    severity: WARNING
+    pattern: Runtime.getRuntime().exec(...)
+  - id: java-webview-javascript
+    languages: [java]
+    message: JavaScript is enabled in an Android WebView; review loaded origins and bridges.
+    severity: INFO
+    pattern: $SETTINGS.setJavaScriptEnabled(true)
+  - id: php-dynamic-eval
+    languages: [php]
+    message: PHP eval requires trusted code input.
+    severity: ERROR
+    pattern: eval(...)
+  - id: generic-private-key
+    languages: [generic]
+    message: Private key marker found in source.
+    severity: ERROR
+    pattern-regex: '-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----'
+  - id: generic-insecure-http-url
+    languages: [generic]
+    message: Cleartext HTTP URL literal; review whether sensitive data can traverse this endpoint.
+    severity: INFO
+    pattern-regex: 'http://[a-zA-Z0-9][a-zA-Z0-9._/-]{4,}'

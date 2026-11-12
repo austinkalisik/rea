@@ -1,0 +1,11 @@
+[Unit]
+Description=REA worker egress network and host firewall
+After=docker.service
+Requires=docker.service
+Before=rea-egress.service rea-runner.service
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /opt/rea-workbench/unified/rea-egress-setup.sh
+RemainAfterExit=yes
+[Install]
+WantedBy=multi-user.target

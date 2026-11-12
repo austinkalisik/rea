@@ -1,0 +1,18 @@
+[Unit]
+Description=REA public-only egress proxy
+After=rea-egress-firewall.service
+Requires=rea-egress-firewall.service
+[Service]
+User=nobody
+Group=nobody
+ExecStart=/usr/bin/python3 /opt/rea-workbench/unified/egress.py
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+MemoryMax=256M
+TasksMax=64
+[Install]
+WantedBy=multi-user.target

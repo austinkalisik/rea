@@ -1,0 +1,17 @@
+[Unit]
+Description=REA static analysis queue supervisor
+After=docker.service rea-egress.service
+Requires=docker.service rea-egress.service
+[Service]
+Type=simple
+EnvironmentFile=-/etc/rea-workbench/ai.env
+ExecStart=/usr/bin/python3 /opt/rea-workbench/unified/runner.py
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+MemoryMax=512M
+TasksMax=64
+[Install]
+WantedBy=multi-user.target
