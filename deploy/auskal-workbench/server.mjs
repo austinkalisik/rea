@@ -51,11 +51,11 @@ function send(res, code, data, type = 'application/json') {
   res.end(type === 'application/json' ? JSON.stringify(data) : data);
 }
 function fail(code, message) { return Object.assign(new Error(message), { code }); }
-async function readJson(req) {
+async function readJson(req, limit=MAX_BODY) {
   if (req.headers['content-type'] !== 'application/json') throw fail(415, 'Send application/json.');
-  if (Number(req.headers['content-length']) > MAX_BODY) throw fail(413, 'Upload limit is 48 MB.');
+  if (Number(req.headers['content-length']) > limit) throw fail(413, 'Upload limit is 48 MB.');
   let size = 0; const chunks = [];
-  for await (const chunk of req) { size += chunk.length; if (size > MAX_BODY) throw fail(413, 'Upload limit is 48 MB.'); chunks.push(chunk); }
+  for await (const chunk of req) { size += chunk.length; if (size > limit) throw fail(413, 'Upload limit is 48 MB.'); chunks.push(chunk); }
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw fail(400, 'Invalid JSON request.'); }
 }
 function relativeName(name) {
@@ -123,16 +123,91 @@ async function execute(job, args) {
   await fs.writeFile(path.join(ROOT,job.id,'report.json'), JSON.stringify(report,null,2), {mode:0o600});
   await save(job); busy = false;
 }
+
+const SESSION_FILE = path.join(ROOT,'.rea-sessions.json');
+const sessions = new Map(), attempts = new Map();
+try {
+  for (const [key,value] of JSON.parse(await fs.readFile(SESSION_FILE,'utf8')))
+    if (/^[a-f0-9]{64}$/.test(key) && value.expires > Date.now()) sessions.set(key,value);
+} catch {}
+let sessionWrite=Promise.resolve();
+function persistSessions() {
+  const data=JSON.stringify([...sessions]);
+  sessionWrite=sessionWrite.catch(()=>{}).then(async()=>{
+    await fs.writeFile(SESSION_FILE+'.tmp',data,{mode:0o600});
+    await fs.rename(SESSION_FILE+'.tmp',SESSION_FILE);
+  });
+  return sessionWrite;
+}
+function sessionKey(req) {
+  const token=(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('__Host-rea_session='))?.slice(19);
+  return token && /^[a-f0-9]{64}$/.test(token) ? crypto.createHash('sha256').update(token).digest('hex') : '';
+}
+function signedIn(req) {
+  const key=sessionKey(req), session=sessions.get(key);
+  if (!session || session.expires<=Date.now()) { sessions.delete(key); return false; }
+  return true;
+}
+function checkOrigin(req) {
+  if (req.headers.origin!=='https://dev.auskal.tech' || req.headers['x-rea-request']!=='workbench')
+    throw fail(403,'Request origin rejected.');
+}
+async function signIn(req,res) {
+  checkOrigin(req);
+  const ip=req.headers['x-rea-client-ip'] || req.socket.remoteAddress;
+  const now=Date.now();
+  for(const [key,v] of attempts) if(v.until<now) attempts.delete(key);
+  const attempt=attempts.get(ip)||{count:0,until:now+600000};
+  if(attempt.count>=10 || attempts.size>=10000) throw fail(429,'Too many sign-in attempts. Try again in 10 minutes.');
+  attempt.count++;attempts.set(ip,attempt);
+  const body=await readJson(req,4096);
+  if(typeof body.username!=='string' || typeof body.password!=='string' ||
+      !body.username.length || body.username.length>128 || body.username.includes(':') || !body.password.length || body.password.length>512)
+    throw fail(400,'Enter your username and password.');
+  let verified;
+  try {
+    verified=await fetch(process.env.REA_AUTH_VERIFY_URL || 'http://172.16.4.1:3181/verify',{
+      headers:{Authorization:'Basic '+Buffer.from(body.username+':'+body.password).toString('base64')},
+      redirect:'error',signal:AbortSignal.timeout(5000)
+    });
+  } catch { throw fail(503,'Account verification is unavailable. Try again shortly.'); }
+  const status=verified.status;await verified.body?.cancel();
+  if(status===401 || status===403) throw fail(401,'Username or password is incorrect. Use your existing GodsEye account.');
+  if(status!==200) throw fail(503,'Account verification is unavailable. Try again shortly.');
+  const token=crypto.randomBytes(32).toString('hex'), key=crypto.createHash('sha256').update(token).digest('hex');
+  for(const [k,v] of sessions) if(v.expires<=now) sessions.delete(k);
+  if(sessions.size>=32) sessions.delete(sessions.keys().next().value);
+  sessions.set(key,{expires:now+28800000,username:body.username});
+  await persistSessions();attempts.delete(ip);
+  res.setHeader('Set-Cookie','__Host-rea_session='+token+'; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=28800');
+  return send(res,200,{ok:true});
+}
+
 const app = http.createServer(async (req,res) => {
   try {
     if (!['dev.auskal.tech','127.0.0.1:3180','localhost:3180'].includes(req.headers.host)) throw fail(403, 'Host rejected.');
     const url = new URL(req.url, 'http://localhost');
-    if (req.method === 'GET' && url.pathname === '/') return send(res,200,await fs.readFile('/app/index.html'),'text/html; charset=utf-8');
-    if (req.method === 'GET' && url.pathname === '/app.js') return send(res,200,await fs.readFile('/app/app.js'),'text/javascript; charset=utf-8');
-    if (req.method === 'GET' && url.pathname === '/api/status') return send(res,200,{version:'6.9.0',busy,modes:MODES,maxBytes:MAX_RAW,retentionHours:24});
-    if (req.method === 'GET' && url.pathname === '/api/jobs') return send(res,200,await jobs());
+    if(req.method==='POST' && url.pathname==='/api/login') return await signIn(req,res);
+    if((req.method==='GET' || req.method==='HEAD') && url.pathname==='/login.js') return send(res,200,await fs.readFile('/app/login.js'),'text/javascript; charset=utf-8');
+    if((req.method==='GET' || req.method==='HEAD') && url.pathname==='/login') {
+      if(signedIn(req)) { res.writeHead(302,{Location:'/', 'Cache-Control':'no-store'});return res.end(); }
+      return send(res,200,await fs.readFile('/app/login.html'),'text/html; charset=utf-8');
+    }
+    if(!signedIn(req)) {
+      if(url.pathname.startsWith('/api/')) return send(res,401,{error:'Sign in to your REA workspace.'});
+      res.writeHead(302,{Location:'/login','Cache-Control':'no-store'});return res.end();
+    }
+    if(req.method==='POST' && url.pathname==='/api/logout') {
+      checkOrigin(req);sessions.delete(sessionKey(req));await persistSessions();
+      res.setHeader('Set-Cookie','__Host-rea_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0');
+      return send(res,200,{ok:true});
+    }
+    if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname === '/') return send(res,200,await fs.readFile('/app/index.html'),'text/html; charset=utf-8');
+    if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname === '/app.js') return send(res,200,await fs.readFile('/app/app.js'),'text/javascript; charset=utf-8');
+    if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname === '/api/status') return send(res,200,{version:'6.9.0',busy,modes:MODES,maxBytes:MAX_RAW,retentionHours:24});
+    if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname === '/api/jobs') return send(res,200,await jobs());
     const match = url.pathname.match(/^\/api\/jobs\/([a-f0-9-]{36})(\/report)?$/);
-    if (req.method === 'GET' && match) {
+    if ((req.method === 'GET' || req.method === 'HEAD') && match) {
       const job = await metadata(match[1]);
       if (!match[2]) return send(res,200,job);
       if (job.status === 'running') return send(res,409,{error:'Analysis is still running.'});

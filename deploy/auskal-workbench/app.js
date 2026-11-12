@@ -1,9 +1,10 @@
 const $ = id => document.getElementById(id);
+$('logout').onclick=async()=>{try {await api('/api/logout',{method:'POST',headers:{'X-REA-Request':'workbench'}});location.assign('/login');}catch(e){message(e.message,true);}};
 let modes = {}, chosen = [], active, timer, submitting = false;
 const bytes = n => n >= 1048576 ? (n/1048576).toFixed(1)+' MB' : (n/1024).toFixed(1)+' KB';
 async function api(url, options) {
   const r = await fetch(url, options);
-  if (r.status === 401) throw Error('Sign in using your existing GodsEye credentials, then reload.');
+  if (r.status === 401) { location.assign('/login'); throw Error('Your session expired. Sign in again.'); }
   const d = await r.json(); if (!r.ok) throw Error(d.error || 'Request failed.'); return d;
 }
 function message(text, error=false) { $('status').textContent=text; $('status').className='status '+(error?'error':''); }
