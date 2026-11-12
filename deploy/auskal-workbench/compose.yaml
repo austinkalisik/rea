@@ -1,0 +1,32 @@
+services:
+  workbench:
+    image: auskal-rea:6.9.0
+    build: .
+    container_name: rea-workbench
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 2g
+    memswap_limit: 2g
+    cpus: 2
+    pids_limit: 128
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=768m
+    entrypoint: ["node", "/app/server.mjs"]
+    volumes:
+      - /opt/rea-workbench:/app:ro
+      - /var/lib/rea-workbench:/data:rw
+    networks:
+      isolated:
+        ipv4_address: 172.16.4.2
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "2"
+networks:
+  isolated:
+    external: true
+    name: rea-isolated
