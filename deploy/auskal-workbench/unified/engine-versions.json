@@ -1,0 +1,15 @@
+{
+  "lief": "0.17.6",
+  "semgrep": "1.185.0",
+  "androguard": "4.1.4",
+  "playwright": "1.65.1",
+  "Pillow": "13.0.0",
+  "reportlab": "5.1.0",
+  "jsbeautifier": "2.0.3",
+  "gitleaks": "8.30.1",
+  "JADX": "1.5.6",
+  "bundletool": "1.18.3",
+  "tesseract": "5.3.0",
+  "chromium": "156.0.8078.79",
+  "REA": "6.9.0"
+}

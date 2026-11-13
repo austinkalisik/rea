@@ -12,7 +12,7 @@ def public_address(host, port):
     if not ips:raise ValueError('No public address')
     for ip in ips:
         addr = ipaddress.ip_address(ip)
-        if not addr.is_global or (isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped):
+        if not addr.is_global or addr.is_multicast or addr.is_reserved or (isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped):
             raise ValueError('Private, reserved, or mapped destination blocked')
     return ips[0]
 
@@ -25,7 +25,7 @@ class Proxy(socketserver.StreamRequestHandler):
         if not SLOTS.acquire(blocking=False): return
         try: self.process()
         except Exception as exc:
-            try: self.wfile.write(b'HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 29\r\n\r\nDestination blocked or failed.')
+            try: self.wfile.write(b'HTTP/1.1 403 Forbidden\r\nX-REA-Egress-Blocked: 1\r\nConnection: close\r\nContent-Length: 29\r\n\r\nDestination blocked or failed.')
             except OSError: pass
         finally: SLOTS.release()
     def process(self):

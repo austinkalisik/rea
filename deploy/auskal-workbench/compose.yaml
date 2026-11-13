@@ -5,6 +5,8 @@ services:
     container_name: rea-workbench
     restart: unless-stopped
     user: "1000:1000"
+    environment:
+      REA_AI_ENABLED: ${REA_AI_ENABLED:-false}
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
@@ -30,3 +32,4 @@ networks:
   isolated:
     external: true
     name: rea-isolated
+

@@ -1,0 +1,212 @@
+{
+  "date": "2026-11-13",
+  "timezone": "Pacific/Port_Moresby",
+  "deployment": "https://dev.auskal.tech",
+  "method": "Separate non-public fixture account/API using the deployment code, persistent queue, real Docker workers and real installed analysis engines. Production login credentials were not read or reset.",
+  "samples": [
+    {
+      "sample": "ZIP source",
+      "type": "source",
+      "status": "passed",
+      "seconds": 10.0,
+      "downloads": [
+        "HTML",
+        "PDF",
+        "JSON"
+      ]
+    },
+    {
+      "sample": "TAR.GZ source",
+      "type": "source",
+      "status": "passed",
+      "seconds": 10.0,
+      "downloads": [
+        "HTML",
+        "PDF",
+        "JSON"
+      ]
+    },
+    {
+      "sample": "ELF binary",
+      "type": "binary",
+      "status": "passed",
+      "seconds": 8.0,
+      "downloads": [
+        "HTML",
+        "PDF",
+        "JSON"
+      ]
+    },
+    {
+      "sample": "PE executable",
+      "type": "binary",
+      "status": "passed",
+      "seconds": 8.1,
+      "downloads": [
+        "HTML",
+        "PDF",
+        "JSON"
+      ]
+    },
+    {
+      "sample": "Mach-O library",
+      "type": "binary",
+      "status": "passed",
+      "seconds": 10.0,
+      "downloads": [
+        "HTML",
+        "PDF",
+        "JSON"
+      ]
+    },
+    {
+      "sample": "Android APK",
+      "type": "android",
+      "status": "passed",
+      "seconds": 8.0,
+      "downloads": [
+        "HTML",
+        "PDF",
+        "JSON"
+      ]
+    },
+    {
+      "sample": "Android AAB",
+      "type": "android",
+      "status": "passed",
+      "seconds": 8.0,
+      "downloads": [
+        "HTML",
+        "PDF",
+        "JSON"
+      ]
+    },
+    {
+      "sample": "iOS IPA",
+      "type": "ios",
+      "status": "passed",
+      "seconds": 6.0,
+      "downloads": [
+        "HTML",
+        "PDF",
+        "JSON"
+      ]
+    },
+    {
+      "sample": "PNG screenshot",
+      "type": "image",
+      "status": "passed",
+      "seconds": 6.0,
+      "downloads": [
+        "HTML",
+        "PDF",
+        "JSON"
+      ]
+    },
+    {
+      "sample": "JPEG screenshot",
+      "type": "image",
+      "status": "passed",
+      "seconds": 6.0,
+      "downloads": [
+        "HTML",
+        "PDF",
+        "JSON"
+      ]
+    },
+    {
+      "sample": "JavaScript source",
+      "type": "script",
+      "status": "passed",
+      "seconds": 8.0,
+      "downloads": [
+        "HTML",
+        "PDF",
+        "JSON"
+      ]
+    },
+    {
+      "sample": "Python source",
+      "type": "script",
+      "status": "passed",
+      "seconds": 6.0,
+      "downloads": [
+        "HTML",
+        "PDF",
+        "JSON"
+      ]
+    },
+    {
+      "sample": "Passive website",
+      "type": "web",
+      "status": "passed",
+      "seconds": 12.1,
+      "downloads": [
+        "HTML",
+        "PDF",
+        "JSON"
+      ]
+    },
+    {
+      "sample": "Archive URL",
+      "type": "source",
+      "status": "passed",
+      "seconds": 8.0,
+      "downloads": [
+        "HTML",
+        "PDF",
+        "JSON"
+      ]
+    },
+    {
+      "sample": "Git URL",
+      "type": "git",
+      "status": "passed",
+      "seconds": 6.0,
+      "downloads": [
+        "HTML",
+        "PDF",
+        "JSON"
+      ]
+    }
+  ],
+  "ui": {
+    "status": "passed",
+    "coverage": [
+      "login",
+      "first-use acknowledgment",
+      "URL/file switching",
+      "upload",
+      "real queued OCR analysis",
+      "progress",
+      "history",
+      "HTML/PDF/JSON downloads",
+      "drag/drop",
+      "390px mobile layout",
+      "sign-out"
+    ],
+    "consoleErrors": 0,
+    "httpsEdge": "Routed to private fixture API for the isolated UI test; production TLS verified separately."
+  },
+  "securityAndOperations": {
+    "safetyUnitTests": 7,
+    "operationalUnitTests": 3,
+    "seededSecretDetection": "passed",
+    "sourceSASTFinding": "passed",
+    "constantDecodingAndEndpoint": "passed",
+    "queuedConcurrencyAndResponsiveHistory": "passed",
+    "privateNetworkTargetRefusal": "passed",
+    "expiryPreservesRecentRunsAndSessions": "passed",
+    "moduleTimeoutTermination": "passed",
+    "symlinkOutputRefusal": "passed"
+  },
+  "optionalNotEnabled": [
+    "Anthropic AI: no API credentials/calls used",
+    "Ghidra-headless native decompilation"
+  ],
+  "fixtureLimits": [
+    "PE and Mach-O and IPA/AAB are small synthetic static packages, not a production-app compatibility guarantee.",
+    "Android APK/DEX fixtures originate in public JADX tests.",
+    "Scanner false positives and unsupported constructs remain possible."
+  ]
+}

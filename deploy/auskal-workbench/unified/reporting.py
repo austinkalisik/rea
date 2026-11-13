@@ -18,7 +18,7 @@ def section(key,title,data=None,status='complete',summary='',limitations=None):
 def command(args,timeout=90,ok=(0,)):
     start=time.monotonic()
     with tempfile.TemporaryFile() as stdout,tempfile.TemporaryFile() as stderr:
-        env={**os.environ,'HOME':'/tmp','SEMGREP_SEND_METRICS':'off','SEMGREP_ENABLE_VERSION_CHECK':'0','NO_COLOR':'1'}
+        env={**os.environ,'HOME':'/tmp','XDG_CONFIG_HOME':'/tmp/.config','XDG_CACHE_HOME':'/tmp/.cache','JAVA_TOOL_OPTIONS':'-Duser.home=/tmp','SEMGREP_SEND_METRICS':'off','SEMGREP_ENABLE_VERSION_CHECK':'0','NO_COLOR':'1'}
         p=subprocess.Popen(args,stdout=stdout,stderr=stderr,start_new_session=True,env=env)
         reason=None
         while p.poll() is None:

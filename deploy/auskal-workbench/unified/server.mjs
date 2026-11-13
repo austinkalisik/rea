@@ -104,7 +104,7 @@ async function enqueue(body,user){
  if(url){
   try{parsed=new URL(url);}catch{throw fail(400,'Enter a complete http:// or https:// URL.');}
   if(!['https:','http:'].includes(parsed.protocol)||parsed.username||parsed.password||!['','80','443'].includes(parsed.port)||url.length>2048)throw fail(400,'Use a public HTTP(S) URL without credentials or custom ports.');
-  if(kind==='auto')targetType=/\.git\/?$/.test(parsed.pathname)||parsed.hostname==='github.com'&&/^\/[^/]+\/[^/]+\/?$/.test(parsed.pathname)?'git':'web';
+  if(kind==='auto')targetType=/\.(zip|tgz|tar|tar\.gz)$/i.test(parsed.pathname)?'source':/\.git\/?$/.test(parsed.pathname)||parsed.hostname==='github.com'&&/^\/[^/]+\/[^/]+\/?$/.test(parsed.pathname)?'git':'web';
   if(!['web','git','source'].includes(targetType))throw fail(400,'This type requires a file upload.');
   if(targetType==='git'&&parsed.protocol!=='https:')throw fail(400,'Git acquisition requires an HTTPS URL.');
  }else if(!Array.isArray(body.files)||!body.files.length||body.files.length>300)throw fail(400,'Upload 1–300 files or enter a public URL.');
@@ -154,7 +154,7 @@ const app=http.createServer(async(req,res)=>{
   }
   if(get&&u.pathname==='/')return send(res,200,await fs.readFile('/app/unified/index.html'),'text/html; charset=utf-8');
   if(get&&u.pathname==='/app.js')return send(res,200,await fs.readFile('/app/unified/app.js'),'text/javascript; charset=utf-8');
-  if(get&&u.pathname==='/api/status')return send(res,200,{version:'2.0',reaVersion:'6.9.0',types:TYPES,maxBytes:MAX_RAW,retentionHours:24,timeoutSeconds:600,acknowledged:!!acknowledged.get(account(req)),aiEnabled:/^(1|true)$/i.test(process.env.REA_AI_ENABLED||'')});
+  if(get&&u.pathname==='/api/status'){let worker=null;try{worker=JSON.parse(await fs.readFile(path.join(ROOT,'.worker-health.json'),'utf8'));}catch{}return send(res,200,{version:'2.0',reaVersion:'6.9.0',types:TYPES,maxBytes:MAX_RAW,retentionHours:24,timeoutSeconds:600,workerReady:!!worker&&Date.now()-Date.parse(worker.at)<600000,acknowledged:!!acknowledged.get(account(req)),aiEnabled:/^(1|true)$/i.test(process.env.REA_AI_ENABLED||'')});}
   if(req.method==='POST'&&u.pathname==='/api/acknowledge'){
    const b=await readJson(req,4096);if(b.accepted!==true)throw fail(400,'Acknowledge authorized use to continue.');
    acknowledged.set(account(req),{version:1,at:new Date().toISOString()});

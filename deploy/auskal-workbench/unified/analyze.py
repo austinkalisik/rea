@@ -3,6 +3,7 @@ import argparse,base64,collections,hashlib,html.parser,importlib.metadata,json,m
 import xml.etree.ElementTree as ET
 from reporting import OUT,REPORT,artifact,command,export,finding,progress,section
 from acquire import extract,fetch,git_acquire,valid_url
+from decoding import decode_js
 INPUT=pathlib.Path('/input')
 SOURCE_SUFFIXES={'.js','.jsx','.ts','.tsx','.py','.java','.kt','.swift','.c','.h','.cpp','.go','.rs','.php','.rb','.cs','.json','.xml','.yaml','.yml','.html','.css','.txt','.env','.sh','.toml','.gradle','.properties','.graphql'}
 
@@ -27,7 +28,7 @@ def scan(root,percent=60):
         for token in re.findall(r'''atob\(\s*["']([A-Za-z0-9+/=]{8,1000})["']\s*\)''',text)[:20]:
             try:decoded_text.append(base64.b64decode(token,validate=True).decode('utf8'))
             except Exception:pass
-    if decoded_text:(root/'rea-decoded-constants.txt').write_text('\n'.join(decoded_text)[:2*1024**2])
+    if decoded_text:(root/'rea-decoded-constants.txt').write_text('\n'.join(json.dumps(x) for x in decoded_text)[:2*1024**2])
     progress('Scanning for exposed secrets',percent)
     report_path=OUT/'gitleaks-internal.json'
     g=command(['gitleaks','dir',str(root),'--no-banner','--redact=100','--report-format','json','--report-path',str(report_path),'--exit-code','0'],timeout=90)
@@ -93,6 +94,9 @@ def script_analysis(root):
         for i,p in enumerate(js[:6]):
             if p.stat().st_size>512*1024:continue
             target=OUT/f'client-{i+1}.beautified.js';target.write_text(jsbeautifier.beautify(p.read_text(errors='replace')));artifact(target.name,'Beautified JavaScript (not executed)')
+            decoded,count=decode_js(p.read_text(errors='replace'))
+            if count:
+                transformed=OUT/f'client-{i+1}.deobfuscated.js';transformed.write_text(jsbeautifier.beautify(decoded));artifact(transformed.name,'Constant-decoded JavaScript (not executed; source may contain sensitive literals)')
     scan(root)
 
 def binary_analysis(p):
@@ -166,7 +170,7 @@ def android_analysis(p,root):
     if dex:
         code=OUT/'decompiled';tool=command(['jadx','--no-res','--threads-count','2','-d',str(code),*map(str,dex)],timeout=160,ok=(0,1))
         java=list(code.rglob('*.java'));samples=[{'file':str(f.relative_to(code)),'source':f.read_text(errors='replace')[:5000]} for f in java[:12]]
-        section('jadx','JADX decompiled source',{'classes':len(java),'samples':samples,'exitCode':tool['code']},'complete' if tool['code']==0 else 'partial',summary='DEX decompilation without executing the app.',limitations=[] if tool['code']==0 else ['Some classes could not be decompiled. '+tool['stderr'][-500:]])
+        section('jadx','JADX decompiled source',{'classes':len(java),'samples':samples,'exitCode':tool['code']},'complete' if tool['code']==0 else 'partial',summary='DEX decompilation without executing the app.',limitations=[] if tool['code']==0 else ['Some classes could not be decompiled. '+(tool['stdout']+tool['stderr'])[-1500:]])
         if java:archive=shutil.make_archive(str(OUT/'decompiled-sources'),'zip',code);artifact('decompiled-sources.zip','JADX Java source archive');scan(code,60)
         else:scan(root,60)
     else:section('jadx','JADX decompiled source',{},'not_applicable','No DEX files are present in this package.');scan(root,60)
@@ -189,7 +193,9 @@ def ios_analysis(p,root):
     for f in app.rglob('*.xcent'):
         try:entitlements.append({'file':str(f.relative_to(app)),'values':plistlib.loads(f.read_bytes())})
         except Exception:pass
-    executable=app/str(info.get('CFBundleExecutable',''))
+    executable_name=str(info.get('CFBundleExecutable',''))
+    if '/' in executable_name or chr(92) in executable_name or executable_name in ('.','..'):raise ValueError('Invalid CFBundleExecutable path')
+    executable=app/executable_name
     if executable.is_file():
         data=executable.read_bytes()
         # Embedded XML entitlement blobs in a code-signature superblob.
@@ -202,7 +208,7 @@ def ios_analysis(p,root):
         (root/'executable-strings.txt').write_text('\n'.join(strs))
     ats=info.get('NSAppTransportSecurity',{})
     if ats.get('NSAllowsArbitraryLoads'):finding('iOS arbitrary network loads enabled','medium','NSAllowsArbitraryLoads is true in ATS configuration.','Info.plist','Prefer HTTPS and narrow, documented ATS exceptions.')
-    section('ios','iOS metadata, frameworks & entitlements',{'bundle':info,'frameworks':frameworks,'entitlements':entitlements,'ATS':ats,**expanded},summary='Static IPA review on Linux.',limitations=['No iOS runtime or deep Objective-C/Swift decompilation. Encrypted App Store executables and DER-only entitlements cannot be fully recovered.'])
+    section('ios','iOS metadata, frameworks & entitlements',{'bundle':info,'frameworks':frameworks,'entitlements':entitlements,'ATS':ats,**expanded},summary='Static IPA review on Linux.',limitations=['No iOS runtime or deep Objective-C/Swift decompilation. Encrypted App Store executables and DER-only entitlements cannot be fully recovered. Entitlements are declared XML data, not a verified code-signature claim.'])
     scan(root)
 
 def image_analysis(p,root):
@@ -276,7 +282,7 @@ def web_analysis(url,root):
             context.route_web_socket('**/*',lambda ws:ws.close())
             page=context.new_page();page.goto(response['url'],wait_until='domcontentloaded',timeout=25000);page.wait_for_timeout(1800)
             rendered=page.locator('body').inner_text(timeout=4000)[:20000];page.screenshot(path=str(OUT/'website.png'),full_page=False,timeout=10000)
-            section('render','Headless page render',{'title':page.title(),'visibleText':rendered,'requestsObserved':count[0]},summary='GET/HEAD only; forms, POST, WebSockets, service workers, downloads, and media are blocked.',limitations=['Page scripts execute only inside the disposable renderer. Some applications cannot render with passive requests alone.'])
+            section('render','Headless page render',{'title':page.title(),'visibleText':rendered,'requestsObserved':count[0],'cookies':[{k:v for k,v in c.items() if k!='value'} for c in context.cookies()]},summary='GET/HEAD only; forms, POST, WebSockets, service workers, downloads, and media are blocked.',limitations=['Page scripts execute only inside the disposable renderer. Some applications cannot render with passive requests alone.'])
             browser.close();artifact('website.png','Headless website screenshot')
     except Exception as exc:section('render','Headless page render',{},'partial',limitations=[str(exc)[:500]])
     script_analysis(root)
@@ -309,7 +315,7 @@ def main():
     REQUEST=json.loads(pathlib.Path('/request.json').read_text())
     kind=REQUEST['kind'];files=[INPUT/f['name'] for f in REQUEST.get('files',[])];p=files[0] if files else None
     if p and len(files)==1 and REQUEST.get('requestedKind','auto')=='auto':kind=detect(p)
-    REPORT.update({'targetType':kind,'title':REQUEST.get('url') or (p.name if p else 'Static target'),'inputs':REQUEST.get('files',[]),'passive':True})
+    REPORT.update({'targetType':kind,'title':REQUEST.get('url') or (p.name if p else 'Static target'),'inputs':REQUEST.get('files',[]),'runId':REQUEST.get('id'),'passive':True})
     for package in ['lief','semgrep','androguard','playwright','Pillow','reportlab','jsbeautifier']:
         try:REPORT['engines'][package]=importlib.metadata.version(package)
         except Exception:pass

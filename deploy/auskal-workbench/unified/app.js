@@ -34,13 +34,32 @@ async function refreshHistory(){knownJobs=await api('/api/jobs');renderHistory()
 function renderHistory(){const q=$('filter').value.toLowerCase();$('history').replaceChildren();for(const j of knownJobs.filter(j=>(j.title||j.files?.[0]?.name||j.label||'').toLowerCase().includes(q)||String(j.kind||'').includes(q))){const b=node('button');const name=node('span',undefined,'name');name.append(node('span',j.title||j.files?.[0]?.name||j.label),node('small',new Date(j.created).toLocaleString()));b.append(name,node('span',j.status,'badge '+j.status));b.onclick=()=>show(j.id);$('history').append(b);}if(!$('history').children.length)$('history').append(node('p','No matching runs yet.'));}
 function stat(value,label,cls){const e=node('div',undefined,'stat');e.append(node('b',value,cls),node('small',label));return e;}
 function prettyData(data){const pre=node('pre',JSON.stringify(data,null,2));return pre;}
+function readable(data,depth=0){
+ if(data===null||typeof data!=='object')return node(typeof data==='string'&&data.length>350?'pre':'p',data===null?'Not recorded':data);
+ if(depth>2)return prettyData(data);
+ const box=node('div');
+ if(Array.isArray(data)){
+  if(!data.length){box.append(node('p','None recorded.'));return box;}
+  const rows=data.slice(0,50);
+  if(rows.every(x=>x&&typeof x==='object'&&!Array.isArray(x))){
+   const keys=[...new Set(rows.flatMap(x=>Object.keys(x)))].slice(0,6);
+   const wrap=node('div');wrap.style.overflowX='auto';const table=node('table');table.className='evidence-table';const header=node('tr');keys.forEach(k=>header.append(node('th',k)));table.append(header);
+   rows.forEach(row=>{const tr=node('tr');keys.forEach(k=>{let v=row[k];v=v===undefined?'—':typeof v==='object'?JSON.stringify(v):String(v);tr.append(node('td',v.length>500?v.slice(0,500)+'…':v));});table.append(tr);});wrap.append(table);box.append(wrap);
+  }else{const list=node('ul');rows.forEach(x=>{const li=node('li');li.append(readable(x,depth+1));list.append(li);});box.append(list);}
+  if(data.length>rows.length)box.append(node('p','Showing '+rows.length+' of '+data.length+'. Download JSON or open raw evidence for the full list.'));return box;
+ }
+ for(const [key,value] of Object.entries(data)){
+  const title=key.replaceAll('_',' ').replace(/([a-z])([A-Z])/g,'$1 $2');box.append(node('h4',title));box.append(readable(value,depth+1));
+ }
+ return box;
+}
 function reportView(report,job){
  $('findings').replaceChildren();$('sections').replaceChildren();$('stats').replaceChildren();$('artifacts').replaceChildren();$('previews').replaceChildren();$('limitations').replaceChildren();
  if(report.schemaVersion!==2){$('summary').textContent='Report from the previous REA interface.';$('sections').append(prettyData(report.result||report));return;}
  $('summary').textContent=report.summary?.text||'';const counts=report.summary?.counts||{};
  $('stats').append(stat(counts.high||0,'HIGH','high'),stat(counts.medium||0,'MEDIUM','medium'),stat((counts.low||0)+(counts.info||0),'LOW / INFO','low'),stat(report.sections.length,'ANALYZER SECTIONS'));
  if(report.findings?.length){$('findings').append(node('h3','Findings to review'));for(const f of report.findings.slice(0,100)){const e=node('article',undefined,'finding '+f.severity);e.append(node('strong',f.severity.toUpperCase()+' · '+f.title),node('p',f.detail),node('small',f.location),node('p',f.recommendation));$('findings').append(e);}}
- for(const section of report.sections){const details=node('details');const summary=node('summary');summary.append(node('strong',section.title),node('span',section.status.replaceAll('_',' '),'badge '+section.status));const content=node('div',undefined,'section-body');if(section.summary)content.append(node('p',section.summary));if(section.id==='ocr')content.append(node('pre',section.data.text));content.append(prettyData(section.data));for(const note of section.limitations||[])content.append(node('p','Coverage: '+note));details.append(summary,content);if(['ocr','http','binary','android','ios'].includes(section.id))details.open=true;$('sections').append(details);}
+ for(const section of report.sections){const details=node('details');const summary=node('summary');summary.append(node('strong',section.title),node('span',section.status.replaceAll('_',' '),'badge '+section.status));const content=node('div',undefined,'section-body');if(section.summary)content.append(node('p',section.summary));content.append(readable(section.data));const raw=node('details');const rawTitle=node('summary','Raw evidence JSON');raw.append(rawTitle,prettyData(section.data));content.append(raw);for(const note of section.limitations||[])content.append(node('p','Coverage: '+note));details.append(summary,content);if(['ocr','http','binary','android','ios'].includes(section.id))details.open=true;$('sections').append(details);}
  for(const a of report.artifacts||[]){const link=node('a',a.description+' ↓','button');link.href='/api/jobs/'+job.id+'/artifacts/'+encodeURIComponent(a.name);$('artifacts').append(link);if(['website.png','ocr-input.png'].includes(a.name)){const img=node('img');img.className='preview';img.alt=a.description;img.src=link.href+'?view=1';$('previews').append(img);}}
  if(report.limitations?.length){$('limitations').append(node('h3','Coverage & limitations'));const ul=node('ul');for(const text of report.limitations)ul.append(node('li',text));$('limitations').append(ul);}
 }
@@ -57,4 +76,4 @@ async function show(id){
   else{for(const format of ['json','html','pdf']){$(format).href='/api/jobs/'+id+'/report?format='+format+'&download=1';$(format).hidden=job.schemaVersion!==2&&format!=='json';}try{const report=await api('/api/jobs/'+id+'/report');if(active===id)reportView(report,job);}catch(e){$('report-error').textContent=job.error||e.message;$('downloads').hidden=true;}}
  }catch(e){message(e.message,true);}
 }
-(async()=>{try{const status=await api('/api/status');acknowledged=status.acknowledged;$('engine').textContent='● QUEUED WORKERS READY';$('ai').disabled=!status.aiEnabled;if(status.aiEnabled)$('ai-label').textContent='Send redacted findings (and this screenshot, if selected) to Anthropic for an optional AI review. API charges may apply.';await refreshHistory();if(!acknowledged)$('ack').showModal();}catch(e){$('engine').textContent='Connection unavailable';message(e.message,true);}})();
+(async()=>{try{const status=await api('/api/status');acknowledged=status.acknowledged;$('engine').textContent=status.workerReady?'● QUEUED WORKERS READY':'● WORKERS STARTING';$('ai').disabled=!status.aiEnabled;if(status.aiEnabled)$('ai-label').textContent='Send redacted findings (and this screenshot, if selected) to Anthropic for an optional AI review. API charges may apply.';await refreshHistory();if(!acknowledged)$('ack').showModal();}catch(e){$('engine').textContent='Connection unavailable';message(e.message,true);}})();

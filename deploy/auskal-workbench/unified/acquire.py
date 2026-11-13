@@ -1,4 +1,4 @@
-import http.client,json,os,pathlib,socket,subprocess,tarfile,tempfile,urllib.request,urllib.parse,zipfile,stat
+import http.client,ipaddress,json,os,pathlib,socket,subprocess,tarfile,tempfile,urllib.request,urllib.parse,zipfile,stat
 from reporting import command
 PROXY='http://172.30.44.1:3182'
 MAX_EXPANDED=256*1024**2
@@ -10,6 +10,11 @@ class Redirects(urllib.request.HTTPRedirectHandler):
 def valid_url(url):
     p=urllib.parse.urlsplit(url)
     if p.scheme not in ('http','https') or not p.hostname or p.username or p.password or p.port not in (None,80,443):raise ValueError('Use a public HTTP(S) URL without credentials/custom ports')
+    host=p.hostname.rstrip('.').lower()
+    if host=='localhost' or host.endswith(('.localhost','.local')):raise ValueError('Private-network targets are blocked')
+    try:addr=ipaddress.ip_address(host)
+    except ValueError:addr=None
+    if addr and (not addr.is_global or addr.is_multicast or addr.is_reserved or isinstance(addr,ipaddress.IPv6Address) and addr.ipv4_mapped):raise ValueError('Private-network targets are blocked')
     return p
 
 def fetch(url,limit=8*1024**2):
@@ -21,6 +26,7 @@ def fetch(url,limit=8*1024**2):
         if error.code in (401,403,404,500,502,503):response=error
         else:raise
     with response:
+        if response.headers.get('X-REA-Egress-Blocked')=='1':raise ValueError('Target blocked or unreachable through the public-only fetch guard')
         data=response.read(limit+1)
         if len(data)>limit:raise ValueError('Remote response exceeded the size limit')
         final=response.geturl();valid_url(final)
