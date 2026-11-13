@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 from reporting import OUT,REPORT,artifact,command,export,finding,progress,section
 from acquire import extract,fetch,git_acquire,valid_url
 from decoding import decode_js
+from reconstruction import DOM_MAP, public_route, reconstruct
 INPUT=pathlib.Path('/input')
 SOURCE_SUFFIXES={'.js','.jsx','.ts','.tsx','.py','.java','.kt','.swift','.c','.h','.cpp','.go','.rs','.php','.rb','.cs','.json','.xml','.yaml','.yml','.html','.css','.txt','.env','.sh','.toml','.gradle','.properties','.graphql'}
 
@@ -280,9 +281,32 @@ def web_analysis(url,root):
                 r.continue_()
             context.route('**/*',route)
             context.route_web_socket('**/*',lambda ws:ws.close())
-            page=context.new_page();page.goto(response['url'],wait_until='domcontentloaded',timeout=25000);page.wait_for_timeout(1800)
+            page=context.new_page()
+            data_requests = []
+
+            def record_response(response):
+                request = response.request
+                if request.resource_type in ('fetch', 'xhr') and len(data_requests) < 40:
+                    data_requests.append({
+                        'method': request.method,
+                        'route': public_route(page.url, response.url),
+                        'status': response.status
+                    })
+
+            page.on('response', record_response)
+            page.goto(response['url'],wait_until='domcontentloaded',timeout=25000);page.wait_for_timeout(1800)
             rendered=page.locator('body').inner_text(timeout=4000)[:20000];page.screenshot(path=str(OUT/'website.png'),full_page=False,timeout=10000)
             section('render','Headless page render',{'title':page.title(),'visibleText':rendered,'requestsObserved':count[0],'cookies':[{k:v for k,v in c.items() if k!='value'} for c in context.cookies()]},summary='GET/HEAD only; forms, POST, WebSockets, service workers, downloads, and media are blocked.',limitations=['Page scripts execute only inside the disposable renderer. Some applications cannot render with passive requests alone.'])
+            try:
+                interface = page.evaluate(DOM_MAP)
+                reconstruction = reconstruct(OUT, page.url, page.title(), interface, data_requests)
+                section('reconstruction', 'Public frontend reconstruction', reconstruction,
+                        summary='Visible controls, form destinations, navigation, and observed data requests.')
+                REPORT['sections'].insert(0, REPORT['sections'].pop())
+                artifact('frontend-prototype.html', 'Offline frontend prototype')
+            except (ValueError, OSError) as exc:
+                section('reconstruction', 'Public frontend reconstruction', {}, 'partial',
+                        limitations=[str(exc)[:300]])
             browser.close();artifact('website.png','Headless website screenshot')
     except Exception as exc:section('render','Headless page render',{},'partial',limitations=[str(exc)[:500]])
     script_analysis(root)
